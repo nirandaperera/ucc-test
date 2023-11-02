@@ -28,5 +28,7 @@ message(STATUS "UCC libs: ${UCC_LIBRARIES}")
 include_directories(${MPI_CXX_INCLUDE_PATH} ${UCX_INCLUDE_DIRS} ${UCC_INCLUDE_DIRS})
 link_directories("${UCX_LIBRARIES}/ucx" ${UCC_LIBRARIES} ${UCC_LIBRARIES}/ucc)
 
-add_executable(ucc_test main.cpp)
+add_executable(ucc_test main.cpp
+        utils.hpp
+        bench.hpp)
 target_link_libraries(ucc_test ${MPI_CXX_LIBRARIES} ucx::ucp ucc)
