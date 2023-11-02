@@ -1,3 +1,5 @@
+#include <iostream>
+
 #include "bench.hpp"
 
 int main(int argc, char *argv[]) {
