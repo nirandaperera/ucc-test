@@ -1,0 +1,8 @@
+name: ucc
+channels:
+  - conda-forge
+  - defaults
+dependencies:
+  - ucx=1.13.1
+  - automake
+  - libtool
