@@ -9,8 +9,11 @@
 
 class Benchmark {
 public:
-    Benchmark(MPI_Comm comm, int iter) : rank(get_mpi_rank(comm)), world_size(get_mpi_world_size(comm)),
-                                         iter(iter) {
+    Benchmark(MPI_Comm comm, std::vector<std::string> *bench_args) : rank(get_mpi_rank(comm)),
+                                                                     world_size(get_mpi_world_size(comm)),
+                                                                     iter(-1) {
+        iter = std::stoi((*bench_args)[0]);
+        bench_args->erase(bench_args->begin());
         std::cout << "rank " << rank << " sz " << world_size << std::endl;
     }
 
@@ -24,22 +27,9 @@ protected:
 
 class CtxCreateBenchmark : public Benchmark {
 public:
-    CtxCreateBenchmark(MPI_Comm comm, int iter) : Benchmark(comm, iter) {}
+    CtxCreateBenchmark(MPI_Comm comm, std::vector<std::string> *bench_args) : Benchmark(comm, bench_args) {}
 
     static std::string_view Name() { return "ctx_create"; }
-
-    ucc_status_t DoRun(std::array<double, 4> &timings) {
-        ucc_lib_h lib;
-        CHECK_UCC_OK(init_ucc(&lib))
-
-        ucc_context_h ucc_ctx;
-        CHECK_UCC_OK(create_ucc_ctx(lib, rank, world_size, &ucc_ctx))
-
-        ucc_team_h ucc_team;
-        CHECK_UCC_OK(create_ucc_team(ucc_ctx, rank, world_size, &ucc_team))
-
-        return UCC_OK;
-    }
 
     ucc_status_t Run() override {
         std::array<double, 5> t{};
@@ -69,9 +59,10 @@ public:
 };
 
 
-std::unique_ptr<Benchmark> create_bench(const std::string_view &name, MPI_Comm comm, int iter) {
+std::unique_ptr<Benchmark>
+create_bench(const std::string_view &name, MPI_Comm comm, std::vector<std::string> *bench_args) {
     if (name == CtxCreateBenchmark::Name()) {
-        return std::make_unique<CtxCreateBenchmark>(comm, iter);
+        return std::make_unique<CtxCreateBenchmark>(comm, bench_args);
     }
 
     return nullptr;
