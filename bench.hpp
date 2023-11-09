@@ -27,7 +27,9 @@ protected:
 
 class CtxCreateBenchmark : public Benchmark {
 public:
-    CtxCreateBenchmark(MPI_Comm comm, std::vector<std::string> *bench_args) : Benchmark(comm, bench_args) {}
+    CtxCreateBenchmark(MPI_Comm comm, std::vector<std::string> *bench_args) : Benchmark(comm, bench_args) {
+        kTimeMap.reserve(10 * iter);
+    }
 
     static std::string_view Name() { return "ctx_create"; }
 

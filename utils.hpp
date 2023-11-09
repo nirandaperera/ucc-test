@@ -7,6 +7,11 @@
 #include <mpi.h>
 #include <chrono>
 #include <ucc/api/ucc.h>
+#include <unordered_map>
+
+static std::unordered_map<void *,
+        std::tuple<std::chrono::time_point<std::chrono::high_resolution_clock>, std::string, size_t, int>> kTimeMap;
+
 
 #define CHECK_UCC_OK(expr) \
     if (const auto& r = (expr); r != UCC_OK) {                                              \
@@ -40,7 +45,6 @@ char team_type[] = "TEAM ";
 template<const char *Type>
 ucc_status_t oob_allgather(void *sbuf, void *rbuf, size_t msglen, void *coll_info, void **req) {
     auto comm = static_cast<MPI_Comm>(coll_info);
-//    std::cout << Type << get_mpi_rank(comm) << " oob allgather " << msglen << std::endl;
     MPI_Request request;
 
     if (MPI_Iallgather(sbuf, (int) msglen, MPI_BYTE, rbuf, (int) msglen, MPI_BYTE, comm,
@@ -48,6 +52,9 @@ ucc_status_t oob_allgather(void *sbuf, void *rbuf, size_t msglen, void *coll_inf
         return UCC_ERR_NO_MESSAGE;
     }
     *req = request;
+
+//    std::cout << Type << get_mpi_rank(comm) << " oob allgather " << msglen << " tag " << request << std::endl;
+    kTimeMap.emplace(request, std::tuple{std::chrono::high_resolution_clock::now(), Type, msglen, get_mpi_rank(comm)});
     return UCC_OK;
 }
 
@@ -56,6 +63,15 @@ ucc_status_t oob_allgather_test(void *req) {
     int completed;
 
     MPI_Test(&request, &completed, MPI_STATUS_IGNORE);
+    auto end = std::chrono::high_resolution_clock::now();
+    if (completed) {
+        const auto &iter = kTimeMap.find(req);
+        auto start = std::get<0>(iter->second);
+        kTimeMap.erase(iter);
+        auto t = std::chrono::duration_cast<std::chrono::duration<double, std::milli>>(end - start).count();
+        std::cout << "MPITIME " << t << " " << std::get<1>(iter->second) << " " << std::get<2>(iter->second)
+                  << " " << std::get<3>(iter->second) << std::endl;
+    }
     return completed ? UCC_OK : UCC_INPROGRESS;
 }
 
