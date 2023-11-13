@@ -53,8 +53,12 @@ ucc_status_t oob_allgather(void *sbuf, void *rbuf, size_t msglen, void *coll_inf
     }
     *req = request;
 
-//    std::cout << Type << get_mpi_rank(comm) << " oob allgather " << msglen << " tag " << request << std::endl;
-    kTimeMap.emplace(request, std::tuple{std::chrono::high_resolution_clock::now(), Type, msglen, get_mpi_rank(comm)});
+    std::cout << Type << get_mpi_rank(comm) << " oob allgather " << msglen << " tag " << request << std::endl;
+    auto r = kTimeMap.emplace(request,
+                              std::tuple{std::chrono::high_resolution_clock::now(), Type, msglen, get_mpi_rank(comm)});
+    if (!r.second) {
+        throw std::runtime_error("aaaa");
+    }
     return UCC_OK;
 }
 
@@ -70,7 +74,8 @@ ucc_status_t oob_allgather_test(void *req) {
         kTimeMap.erase(iter);
         auto t = std::chrono::duration_cast<std::chrono::duration<double, std::milli>>(end - start).count();
         std::cout << "MPITIME " << t << " " << std::get<1>(iter->second) << " " << std::get<2>(iter->second)
-                  << " " << std::get<3>(iter->second) << std::endl;
+                                                                                << " " << std::get<3>(iter->second)
+                                                                                << " " << req << std::endl;
     }
     return completed ? UCC_OK : UCC_INPROGRESS;
 }
