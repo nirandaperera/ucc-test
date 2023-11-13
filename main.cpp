@@ -15,6 +15,8 @@ int main(int argc, char *argv[]) {
     for (int i = 2; i < argc; i++) {
         bench_args.emplace_back(argv[i]);
     }
+    // cli requires a reversed vector
+    std::reverse(bench_args.begin(), bench_args.end());
 
     auto bench = create_bench(name, mpi_comm, &bench_args);
     if (bench) {

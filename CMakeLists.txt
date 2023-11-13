@@ -30,5 +30,7 @@ link_directories("${UCX_LIBRARIES}/ucx" ${UCC_LIBRARIES} ${UCC_LIBRARIES}/ucc)
 
 add_executable(ucc_test main.cpp
         utils.hpp
-        bench.hpp)
+        bench.hpp
+        third-party/CLI11.hpp
+)
 target_link_libraries(ucc_test ${MPI_CXX_LIBRARIES} ucx::ucp ucc)

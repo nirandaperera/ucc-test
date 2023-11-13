@@ -6,15 +6,19 @@
 #include <memory>
 #include <chrono>
 #include "utils.hpp"
+#include "third-party/CLI11.hpp"
 
 class Benchmark {
 public:
     Benchmark(MPI_Comm comm, std::vector<std::string> *bench_args) : rank(get_mpi_rank(comm)),
                                                                      world_size(get_mpi_world_size(comm)),
                                                                      iter(-1) {
-        iter = std::stoi((*bench_args)[0]);
-        bench_args->erase(bench_args->begin());
-        std::cout << "rank " << rank << " sz " << world_size << std::endl;
+        CLI::App app;
+        app.allow_extras();
+        app.add_option("--iter", iter)->required();
+        app.parse(*bench_args);
+
+        std::cout << "rank " << rank << " sz " << world_size << " iter " << iter << std::endl;
     }
 
     virtual ~Benchmark() = default;
