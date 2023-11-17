@@ -99,6 +99,11 @@ class AllGatherBenchmark : public Benchmark {
     return create_ucc_team(ucc_ctx, rank, world_size, &ucc_team);
   }
 
+  ucc_status_t DestroyUcc() {
+    CHECK_UCC_OK(destroy_ucc_team(ucc_team))
+    return ucc_context_destroy(ucc_ctx);
+  }
+
   ucc_status_t AllGatherNumBuffers(const Table &table, std::vector<uint32_t> *num_buffers) {
     ucc_coll_args_t args;
     args.mask = 0;
@@ -265,7 +270,7 @@ class AllGatherBenchmark : public Benchmark {
     std::cout << "TIMINGS(" << iter << ") " << rank << "," << tot_num_buf * buf_sz << "," << t[0] / iter << ","
               << t[1] / iter << "," << t[2] / iter << std::endl;
 
-    return UCC_OK;
+    return DestroyUcc();
   }
 
  private:
