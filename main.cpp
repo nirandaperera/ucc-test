@@ -18,7 +18,7 @@ int main(int argc, char *argv[]) {
     // cli requires a reversed vector
     std::reverse(bench_args.begin(), bench_args.end());
 
-    auto bench = create_bench(name, mpi_comm, &bench_args);
+    auto bench = ucc_test::create_bench(name, mpi_comm, &bench_args);
     if (bench) {
         CHECK_UCC_OK(bench->Run());
     } else {
