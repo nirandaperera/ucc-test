@@ -273,7 +273,7 @@ class AllGatherBenchmark : public Benchmark {
 
       UPDATE_TIMING(t[4], ucc_barrier(ucc_ctx, ucc_team));
     }
-    std::cout << std::fixed << std::setprecision(4) << "TIMINGS(" << iter << ") " << rank << "\t"
+    std::cout << std::fixed << std::setprecision(4) << world_size << " TIMINGS(" << iter << ") " << rank << "\t"
               << tot_num_buf * buf_sz << "\t" << t[0] / iter << "\t" << t[1] / iter << "\t" << t[2] / iter << "\t"
               << t[3] / iter << "\t" << t[4] / iter << std::endl;
 
