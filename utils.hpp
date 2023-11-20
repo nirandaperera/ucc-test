@@ -9,7 +9,6 @@
 #include <ucc/api/ucc.h>
 #include <unordered_map>
 
-
 namespace ucc_test {
 
 static std::unordered_map<void *,
@@ -26,10 +25,10 @@ static std::unordered_map<void *,
 
 #define UPDATE_TIMING(t, expr) \
     do{               \
-    auto start = std::chrono::high_resolution_clock::now(); \
+    auto start_ = std::chrono::high_resolution_clock::now(); \
     CHECK_UCC_OK(expr)             \
-    auto end = std::chrono::high_resolution_clock::now();   \
-    t += std::chrono::duration_cast<std::chrono::duration<double, std::milli>>(end - start).count(); \
+    auto end_ = std::chrono::high_resolution_clock::now();   \
+    t += std::chrono::duration_cast<std::chrono::duration<double, std::milli>>(end_ - start_).count(); \
     } while(0)
 
 int get_mpi_rank(MPI_Comm comm) {
@@ -50,7 +49,7 @@ constexpr T round_up(T val, T base) {
 }
 
 template<typename T>
-void print_array(const std::string& prefix, uint32_t rank, const std::vector<T> &vec) {
+void print_array(const std::string &prefix, uint32_t rank, const std::vector<T> &vec) {
   std::cout << prefix << rank << " [";
   for (auto &v : vec) {
     std::cout << v << ",";
@@ -178,6 +177,24 @@ ucc_status_t destroy_ucc_team(ucc_team_h &ucc_team) {
   ucc_status_t status;
   while (UCC_INPROGRESS == (status = ucc_team_destroy(ucc_team))) {}
   return status;
+}
+
+ucc_status_t ucc_barrier(ucc_context_h ctx, ucc_team_h team) {
+  ucc_coll_args_t args_;
+  ucc_coll_req_h req;
+
+  args_.mask = 0;
+  args_.coll_type = UCC_COLL_TYPE_BARRIER;
+
+  CHECK_UCC_OK(ucc_collective_init(&args_, &req, team))
+
+  CHECK_UCC_OK(ucc_collective_post(req));
+
+  ucc_status_t status;
+  while ((status = ucc_collective_test(req)) == UCC_INPROGRESS) {}
+  CHECK_UCC_OK(status)
+
+  return ucc_collective_finalize(req);
 }
 
 }

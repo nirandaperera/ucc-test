@@ -87,7 +87,7 @@ class AllGatherBenchmark : public Benchmark {
 
     buf_sz = round_up(buf_sz, sizeof(uint32_t)); // round up buffer sizes to sizeof(int)
 
-    std::cout << "t sz " << min_table_sz << "," << max_table_sz << " buf " << buf_sz << " num t " << num_tables
+    std::cout << "t_sz " << min_table_sz << "," << max_table_sz << " buf " << buf_sz << " num_t " << num_tables
               << std::endl;
   }
 
@@ -242,10 +242,11 @@ class AllGatherBenchmark : public Benchmark {
     // init ucc
     CHECK_UCC_OK(InitUcc())
 
-    std::array<double, 3> t{};
+    std::array<double, 5> t{};
 
     uint32_t min_num_buf, max_num_buf, tot_num_buf;
     for (uint32_t i = 0; i < iter; i++) {
+      auto start = std::chrono::high_resolution_clock::now();
       std::vector<uint32_t> num_buffers;
 
       UPDATE_TIMING(t[0], AllGatherNumBuffers(tables[0], &num_buffers));
@@ -265,10 +266,14 @@ class AllGatherBenchmark : public Benchmark {
 
       UPDATE_TIMING(t[2], ProgressRequests());
 
-//      PrintOutput(rec_buffer);
+      auto end = std::chrono::high_resolution_clock::now();
+      //      PrintOutput(rec_buffer);
+      t[3] += std::chrono::duration_cast<std::chrono::duration<double, std::milli>>(end - start).count();
+
+      UPDATE_TIMING(t[4], ucc_barrier(ucc_ctx, ucc_team));
     }
-    std::cout << "TIMINGS(" << iter << ") " << rank << "," << tot_num_buf * buf_sz << "," << t[0] / iter << ","
-              << t[1] / iter << "," << t[2] / iter << std::endl;
+    std::cout << "TIMINGS(" << iter << ") " << rank << "\t" << tot_num_buf * buf_sz << "\t" << t[0] / iter << "\t"
+              << t[1] / iter << "\t" << t[2] / iter << "\t" << t[3] / iter << "\t" << t[4] / iter << std::endl;
 
     return DestroyUcc();
   }
