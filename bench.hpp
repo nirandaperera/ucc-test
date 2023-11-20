@@ -242,6 +242,7 @@ class AllGatherBenchmark : public Benchmark {
 
     // init ucc
     CHECK_UCC_OK(InitUcc())
+    CHECK_UCC_OK(ucc_barrier(ucc_ctx, ucc_team)) // barrier after init
 
     std::array<double, 5> t{};
 
