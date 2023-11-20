@@ -9,6 +9,7 @@
 #include <deque>
 #include <thread>
 #include <atomic>
+#include <iomanip>
 #include "data.hpp"
 #include "third-party/CLI11.hpp"
 
@@ -272,8 +273,9 @@ class AllGatherBenchmark : public Benchmark {
 
       UPDATE_TIMING(t[4], ucc_barrier(ucc_ctx, ucc_team));
     }
-    std::cout << "TIMINGS(" << iter << ") " << rank << "\t" << tot_num_buf * buf_sz << "\t" << t[0] / iter << "\t"
-              << t[1] / iter << "\t" << t[2] / iter << "\t" << t[3] / iter << "\t" << t[4] / iter << std::endl;
+    std::cout << std::fixed << std::setprecision(4) << "TIMINGS(" << iter << ") " << rank << "\t"
+              << tot_num_buf * buf_sz << "\t" << t[0] / iter << "\t" << t[1] / iter << "\t" << t[2] / iter << "\t"
+              << t[3] / iter << "\t" << t[4] / iter << std::endl;
 
     return DestroyUcc();
   }

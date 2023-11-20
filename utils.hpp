@@ -191,7 +191,9 @@ ucc_status_t ucc_barrier(ucc_context_h ctx, ucc_team_h team) {
   CHECK_UCC_OK(ucc_collective_post(req));
 
   ucc_status_t status;
-  while ((status = ucc_collective_test(req)) == UCC_INPROGRESS) {}
+  while ((status = ucc_collective_test(req)) == UCC_INPROGRESS) {
+    ucc_context_progress(ctx);
+  }
   CHECK_UCC_OK(status)
 
   return ucc_collective_finalize(req);
