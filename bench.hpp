@@ -254,7 +254,7 @@ class AllGatherBenchmark : public Benchmark {
       auto start = std::chrono::high_resolution_clock::now();
       std::vector<uint32_t> num_buffers;
 
-      UPDATE_TIMING(t[i * iter + 0], AllGatherNumBuffers(tables[0], &num_buffers));
+      UPDATE_TIMING(t[i * 5 + 0], AllGatherNumBuffers(tables[0], &num_buffers));
       auto min_max = std::minmax_element(num_buffers.begin(), num_buffers.end());
       min_num_buf = *min_max.first;
       max_num_buf = *min_max.second;
@@ -262,20 +262,20 @@ class AllGatherBenchmark : public Benchmark {
 //    print_array("num buf\t", rank, num_buffers);
 
       Buffer rec_buffer;
-      UPDATE_TIMING(t[i * iter + 1], CreateAllGatherBufferRequests(tables[0],
+      UPDATE_TIMING(t[i * 5 + 1], CreateAllGatherBufferRequests(tables[0],
                                                         num_buffers,
                                                         tot_num_buf,
                                                         min_num_buf,
                                                         max_num_buf,
                                                         &rec_buffer));
 
-      UPDATE_TIMING(t[i * iter + 2], ProgressRequests());
+      UPDATE_TIMING(t[i * 5 + 2], ProgressRequests());
 
       auto end = std::chrono::high_resolution_clock::now();
       //      PrintOutput(rec_buffer);
-      t[i * iter + 3] += std::chrono::duration_cast<std::chrono::duration<double, std::milli>>(end - start).count();
+      t[i * 5 + 3] += std::chrono::duration_cast<std::chrono::duration<double, std::milli>>(end - start).count();
 
-      UPDATE_TIMING(t[i * iter + 4], ucc_barrier(ucc_ctx, ucc_team));
+      UPDATE_TIMING(t[i * 5 + 4], ucc_barrier(ucc_ctx, ucc_team));
     }
 
     for (size_t i = 0; i < iter * 5; i += 5) {
