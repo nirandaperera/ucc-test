@@ -128,7 +128,7 @@ ucc_status_t create_ucc_ctx(ucc_lib_h lib, int rank, int world_size, ucc_context
   ucc_context_params_t ctx_params;
   ctx_params.mask = UCC_CONTEXT_PARAM_FIELD_OOB | UCC_CONTEXT_PARAM_FIELD_TYPE | UCC_CONTEXT_PARAM_FIELD_SYNC_TYPE;
 
-  ctx_params.type = UCC_CONTEXT_EXCLUSIVE;
+  ctx_params.type = UCC_CONTEXT_SHARED;
   ctx_params.sync_type = UCC_NO_SYNC_COLLECTIVES;
 
   ctx_params.oob.allgather = oob_allgather<ctx_type>;
@@ -147,7 +147,7 @@ ucc_status_t create_ucc_ctx(ucc_lib_h lib, int rank, int world_size, ucc_context
   return UCC_OK;
 }
 
-ucc_status_t create_ucc_team(ucc_context_h ucc_ctx, size_t rank, size_t world_size, ucc_team_h *ucc_team) {
+ucc_status_t create_ucc_team(ucc_context_h ucc_ctx, int rank, int world_size, ucc_team_h *ucc_team) {
   ucc_team_params_t team_params;
 
   team_params.mask = UCC_TEAM_PARAM_FIELD_OOB | UCC_TEAM_PARAM_FIELD_ORDERING | UCC_TEAM_PARAM_FIELD_TEAM_SIZE |
@@ -160,7 +160,7 @@ ucc_status_t create_ucc_team(ucc_context_h ucc_ctx, size_t rank, size_t world_si
   team_params.oob.n_oob_eps = world_size;
   team_params.oob.oob_ep = rank;
 
-  team_params.ordering = UCC_COLLECTIVE_POST_ORDERED;
+  team_params.ordering = UCC_COLLECTIVE_INIT_AND_POST_UNORDERED;
 
   team_params.team_size = world_size;
 
@@ -179,7 +179,7 @@ ucc_status_t destroy_ucc_team(ucc_team_h &ucc_team) {
   return status;
 }
 
-ucc_status_t ucc_barrier(ucc_team_h team) {
+ucc_status_t ucc_barrier(ucc_context_h ctx, ucc_team_h team) {
   ucc_coll_args_t args_;
   ucc_coll_req_h req;
 
@@ -188,12 +188,11 @@ ucc_status_t ucc_barrier(ucc_team_h team) {
 
   CHECK_UCC_OK(ucc_collective_init(&args_, &req, team))
 
-  CHECK_UCC_OK(ucc_collective_post(req))
+  CHECK_UCC_OK(ucc_collective_post(req));
 
   ucc_status_t status;
   while ((status = ucc_collective_test(req)) == UCC_INPROGRESS) {
-    std::this_thread::yield();
-//    ucc_context_progress(ctx);
+    ucc_context_progress(ctx);
   }
   CHECK_UCC_OK(status)
 
