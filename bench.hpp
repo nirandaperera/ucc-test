@@ -246,14 +246,15 @@ class AllGatherBenchmark : public Benchmark {
     CHECK_UCC_OK(InitUcc())
     CHECK_UCC_OK(ucc_barrier(ucc_ctx, ucc_team)) // barrier after init
 
-    std::array<double, 5> t{};
+//    std::array<double, 5> t{};
 
+    std::vector<double> t(5 * iter, 0);
     uint32_t min_num_buf, max_num_buf, tot_num_buf;
     for (uint32_t i = 0; i < iter; i++) {
       auto start = std::chrono::high_resolution_clock::now();
       std::vector<uint32_t> num_buffers;
 
-      UPDATE_TIMING(t[0], AllGatherNumBuffers(tables[0], &num_buffers));
+      UPDATE_TIMING(t[i * iter + 0], AllGatherNumBuffers(tables[0], &num_buffers));
       auto min_max = std::minmax_element(num_buffers.begin(), num_buffers.end());
       min_num_buf = *min_max.first;
       max_num_buf = *min_max.second;
@@ -261,29 +262,30 @@ class AllGatherBenchmark : public Benchmark {
 //    print_array("num buf\t", rank, num_buffers);
 
       Buffer rec_buffer;
-      UPDATE_TIMING(t[1], CreateAllGatherBufferRequests(tables[0],
+      UPDATE_TIMING(t[i * iter + 1], CreateAllGatherBufferRequests(tables[0],
                                                         num_buffers,
                                                         tot_num_buf,
                                                         min_num_buf,
                                                         max_num_buf,
                                                         &rec_buffer));
 
-      UPDATE_TIMING(t[2], ProgressRequests());
+      UPDATE_TIMING(t[i * iter + 2], ProgressRequests());
 
       auto end = std::chrono::high_resolution_clock::now();
       //      PrintOutput(rec_buffer);
-      t[3] += std::chrono::duration_cast<std::chrono::duration<double, std::milli>>(end - start).count();
+      t[i * iter + 3] += std::chrono::duration_cast<std::chrono::duration<double, std::milli>>(end - start).count();
 
-      UPDATE_TIMING(t[4], ucc_barrier(ucc_ctx, ucc_team));
+      UPDATE_TIMING(t[i * iter + 4], ucc_barrier(ucc_ctx, ucc_team));
     }
-    std::cout << std::fixed << std::setprecision(4) << world_size
-              << " TIMINGS(" << iter << ") " << rank << "\t"
-              << buf_sz << "\t" << tot_num_buf * buf_sz << "\t"
-              << t[0] / iter << "\t"
-              << t[1] / iter << "\t"
-              << t[2] / iter << "\t"
-              << t[3] / iter << "\t"
-              << t[4] / iter << std::endl;
+
+    for (size_t i = 0; i < iter * 5; i += 5) {
+      std::cout << std::fixed << std::setprecision(4) << world_size
+                << " TIMINGS(" << iter << ") " << rank << "\t"
+                << buf_sz << "\t" << tot_num_buf * buf_sz << "\t"
+                << t[i + 0] << "\t" << t[i + 1] << "\t" << t[i + 2] << "\t" << t[i + 3] << "\t" << t[i + 4] << "\t"
+                << i / iter << std::endl;
+    }
+
 
     return DestroyUcc();
   }
