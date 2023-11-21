@@ -12,6 +12,7 @@
 #include <iomanip>
 #include "data.hpp"
 #include "third-party/CLI11.hpp"
+#include "ucc_exec.hpp"
 
 namespace ucc_test {
 
@@ -101,6 +102,7 @@ class AllGatherBenchmark : public Benchmark {
   }
 
   ucc_status_t DestroyUcc() {
+    progress_manager.Shutdown();
     CHECK_UCC_OK(destroy_ucc_team(ucc_team))
     return ucc_context_destroy(ucc_ctx);
   }
@@ -124,7 +126,8 @@ class AllGatherBenchmark : public Benchmark {
 
     ucc_status_t status;
     while (UCC_INPROGRESS == (status = ucc_collective_test(req))) {
-      ucc_context_progress(ucc_ctx);
+//      ucc_context_progress(ucc_ctx);
+      std::this_thread::yield();
     }
     CHECK_UCC_OK(status);
 
@@ -221,17 +224,22 @@ class AllGatherBenchmark : public Benchmark {
     // progress the requests
     while (!pending_requests.empty()) {
       // every iteration progress context
-      ucc_context_progress(ucc_ctx);
+      ucc_status_t status;
+//      if ((status = ucc_context_progress(ucc_ctx)) < 0) {
+//        return status;
+//      }
 
-      auto &req = pending_requests.front();
-      auto status = ucc_collective_test(req.req);
-      if (status == UCC_OK) {
-        // request completed
-        ucc_collective_finalize(req.req);
-        pending_requests.pop_front();
-      } else if (status < 0) {
-        return status; // an error has occurred
+      for (auto iter = pending_requests.begin(); iter < pending_requests.end(); iter++) {
+        status = ucc_collective_test((*iter).req);
+        if (status == UCC_OK) {
+          // request completed
+          ucc_collective_finalize((*iter).req);
+          pending_requests.erase(iter);
+        } else if (status < 0) {
+          return status; // an error has occurred
+        }
       }
+      std::this_thread::yield();
     }
     return UCC_OK;
   }
@@ -242,9 +250,11 @@ class AllGatherBenchmark : public Benchmark {
 
     // init ucc
     CHECK_UCC_OK(InitUcc())
-    CHECK_UCC_OK(ucc_barrier(ucc_ctx, ucc_team)) // barrier after init
+    progress_manager.Init(ucc_ctx);
 
-    std::array<double, 5> t{};
+    CHECK_UCC_OK(ucc_barrier(ucc_team)) // barrier after init
+
+    std::array<double, 5> t{0, 0, 0, 0, 0};
 
     uint32_t min_num_buf, max_num_buf, tot_num_buf;
     for (uint32_t i = 0; i < iter; i++) {
@@ -272,7 +282,7 @@ class AllGatherBenchmark : public Benchmark {
       //      PrintOutput(rec_buffer);
       t[3] += std::chrono::duration_cast<std::chrono::duration<double, std::milli>>(end - start).count();
 
-      UPDATE_TIMING(t[4], ucc_barrier(ucc_ctx, ucc_team));
+      UPDATE_TIMING(t[4], ucc_barrier(ucc_team));
     }
     std::cout << std::fixed << std::setprecision(4) << world_size
               << " TIMINGS(" << iter << ") " << rank << "\t"
@@ -323,6 +333,7 @@ class AllGatherBenchmark : public Benchmark {
   std::vector<Table> tables;
 
   std::deque<Request> pending_requests{};
+  UccProgressManager progress_manager;
 };
 
 std::unique_ptr<Benchmark> create_bench(const std::string_view &name, MPI_Comm comm,
