@@ -128,7 +128,7 @@ ucc_status_t create_ucc_ctx(ucc_lib_h lib, int rank, int world_size, ucc_context
   ucc_context_params_t ctx_params;
   ctx_params.mask = UCC_CONTEXT_PARAM_FIELD_OOB | UCC_CONTEXT_PARAM_FIELD_TYPE | UCC_CONTEXT_PARAM_FIELD_SYNC_TYPE;
 
-  ctx_params.type = UCC_CONTEXT_SHARED;
+  ctx_params.type = UCC_CONTEXT_EXCLUSIVE;
   ctx_params.sync_type = UCC_NO_SYNC_COLLECTIVES;
 
   ctx_params.oob.allgather = oob_allgather<ctx_type>;
@@ -160,7 +160,7 @@ ucc_status_t create_ucc_team(ucc_context_h ucc_ctx, int rank, int world_size, uc
   team_params.oob.n_oob_eps = world_size;
   team_params.oob.oob_ep = rank;
 
-  team_params.ordering = UCC_COLLECTIVE_INIT_AND_POST_UNORDERED;
+  team_params.ordering = UCC_COLLECTIVE_POST_ORDERED;
 
   team_params.team_size = world_size;
 

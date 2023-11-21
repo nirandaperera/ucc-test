@@ -223,14 +223,16 @@ class AllGatherBenchmark : public Benchmark {
       // every iteration progress context
       ucc_context_progress(ucc_ctx);
 
-      auto &req = pending_requests.front();
-      auto status = ucc_collective_test(req.req);
-      if (status == UCC_OK) {
-        // request completed
-        ucc_collective_finalize(req.req);
-        pending_requests.pop_front();
-      } else if (status < 0) {
-        return status; // an error has occurred
+      // go through all requests and finalize finished ones
+      for (auto i = pending_requests.begin(); i < pending_requests.end(); i++) {
+        auto status = ucc_collective_test((*i).req);
+        if (status == UCC_OK) {
+          // request completed
+          ucc_collective_finalize((*i).req);
+          pending_requests.erase(i);
+        } else if (status < 0) {
+          return status; // an error has occurred
+        }
       }
     }
     return UCC_OK;
