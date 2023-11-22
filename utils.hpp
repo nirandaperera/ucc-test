@@ -147,7 +147,7 @@ ucc_status_t create_ucc_ctx(ucc_lib_h lib, int rank, int world_size, ucc_context
   return UCC_OK;
 }
 
-ucc_status_t create_ucc_team(ucc_context_h ucc_ctx, int rank, int world_size, ucc_team_h *ucc_team) {
+ucc_status_t create_ucc_team(ucc_context_h ucc_ctx, size_t rank, size_t world_size, ucc_team_h *ucc_team) {
   ucc_team_params_t team_params;
 
   team_params.mask = UCC_TEAM_PARAM_FIELD_OOB | UCC_TEAM_PARAM_FIELD_ORDERING | UCC_TEAM_PARAM_FIELD_TEAM_SIZE |

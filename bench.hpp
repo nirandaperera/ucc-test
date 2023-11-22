@@ -95,8 +95,48 @@ class AllGatherBenchmark : public Benchmark {
   static std::string_view Name() { return "allgather"; }
 
   ucc_status_t InitUcc() {
+    tables = generate_tables(num_tables, min_table_sz, max_table_sz, buf_sz, rank, world_size);
+    rec_buffer.Resize(world_size * max_table_sz); // allocate memory for max size
+    num_buffers.resize(world_size, 0);
+
+    size_t tot_buffers = std::accumulate(tables.begin(), tables.end(), 0, [](size_t sum, const Table &t) {
+      return sum + t.buffers.size();
+    });
+    mem_regions.reserve(tot_buffers + 2); // +2 for rec_buffer and num_buffer
+    for (auto &t : tables) {
+      for (auto &b : t.buffers) {
+        mem_regions.emplace_back(ucc_mem_map_t{.address=b.Data(), .len=b.Size()});
+      }
+    }
+    mem_regions.emplace_back(ucc_mem_map_t{.address=rec_buffer.Data(), .len=rec_buffer.Size()});
+    mem_regions.emplace_back(ucc_mem_map_t{.address=num_buffers.data(), .len=num_buffers.size() * sizeof(uint32_t)});
+
+    // ucc lib
     CHECK_UCC_OK(init_ucc(&lib))
-    CHECK_UCC_OK(create_ucc_ctx(lib, rank, world_size, &ucc_ctx))
+
+    // ucc ctx
+    ucc_context_config_h ctx_config;
+    CHECK_UCC_OK(ucc_context_config_read(lib, /*filename=*/nullptr, &ctx_config))
+
+    ucc_context_params_t ctx_params;
+
+    ctx_params.mask |= UCC_CONTEXT_PARAM_FIELD_TYPE;
+    ctx_params.type = UCC_CONTEXT_EXCLUSIVE;
+
+    ctx_params.mask |= UCC_CONTEXT_PARAM_FIELD_SYNC_TYPE;
+    ctx_params.sync_type = UCC_NO_SYNC_COLLECTIVES;
+
+    ctx_params.mask |= UCC_CONTEXT_PARAM_FIELD_OOB;
+    ctx_params.oob =
+        {.allgather= oob_allgather<ctx_type>, .req_test = oob_allgather_test, .req_free = oob_allgather_free,
+            .coll_info = MPI_COMM_WORLD, .n_oob_eps = world_size, .oob_ep = rank};
+
+    ctx_params.mask |= UCC_CONTEXT_PARAM_FIELD_MEM_PARAMS;
+    ctx_params.mem_params = {mem_regions.data(), mem_regions.size()};
+
+    CHECK_UCC_OK(ucc_context_create(lib, &ctx_params, ctx_config, &ucc_ctx))
+    ucc_context_config_release(ctx_config);
+
     return create_ucc_team(ucc_ctx, rank, world_size, &ucc_team);
   }
 
@@ -105,17 +145,16 @@ class AllGatherBenchmark : public Benchmark {
     return ucc_context_destroy(ucc_ctx);
   }
 
-  ucc_status_t AllGatherNumBuffers(const Table &table, std::vector<uint32_t> *num_buffers) {
+  ucc_status_t AllGatherNumBuffers(const Table &table) {
     ucc_coll_args_t args;
     args.mask = 0;
     args.coll_type = UCC_COLL_TYPE_ALLGATHER;
 
     uint32_t src = table.buffers.size();
-    num_buffers->resize(world_size);
 
     args.src.info = {.buffer = &src, .count = 1, .datatype = UCC_DT_UINT32, .mem_type = UCC_MEMORY_TYPE_HOST};
     args.dst.info =
-        {.buffer = num_buffers->data(), .count = world_size, .datatype = UCC_DT_UINT32, .mem_type = UCC_MEMORY_TYPE_HOST};
+        {.buffer = num_buffers.data(), .count = world_size, .datatype = UCC_DT_UINT32, .mem_type = UCC_MEMORY_TYPE_HOST};
 
     ucc_coll_req_h req;
     CHECK_UCC_OK(ucc_collective_init(&args, &req, ucc_team))
@@ -166,12 +205,9 @@ class AllGatherBenchmark : public Benchmark {
   }
 
   ucc_status_t CreateAllGatherBufferRequests(const Table &table,
-                                             const std::vector<uint32_t> &num_buffers,
                                              uint32_t tot_num_buf,
                                              uint32_t min_num_buf,
-                                             uint32_t max_num_buf,
-                                             Buffer *rec_buffer) {
-    rec_buffer->Resize(tot_num_buf * buf_sz);
+                                             uint32_t max_num_buf) {
 
     auto &table_bufs = const_cast<std::vector<Buffer> &>(table.buffers);
 
@@ -180,12 +216,12 @@ class AllGatherBenchmark : public Benchmark {
     for (; idx < min_num_buf; idx++) {
       assert(buf_sz == table_bufs[idx].Size());
       ucc_coll_req_h req;
-      uint8_t *rec_pos = rec_buffer->Data() + idx * world_size * buf_sz;
+      uint8_t *rec_pos = rec_buffer.Data() + idx * world_size * buf_sz;
       CHECK_UCC_OK(AllGatherBuffer(table_bufs[idx].Data(), rec_pos, &req))
       pending_requests.emplace_back(req);
     }
 
-    uint8_t *rec_pos = rec_buffer->Data() + idx * world_size * buf_sz;
+    uint8_t *rec_pos = rec_buffer.Data() + idx * world_size * buf_sz;
     // Then do allgatherv with empty buffers when there are no beffers to offer
     for (; idx < max_num_buf; idx++) {
 
@@ -239,7 +275,6 @@ class AllGatherBenchmark : public Benchmark {
   }
 
   ucc_status_t Run() override {
-    tables = generate_tables(num_tables, min_table_sz, max_table_sz, buf_sz, rank, world_size);
 //    PrintTables();
 
     // init ucc
@@ -252,27 +287,23 @@ class AllGatherBenchmark : public Benchmark {
     uint32_t min_num_buf, max_num_buf, tot_num_buf;
     for (uint32_t i = 0; i < iter; i++) {
       auto start = std::chrono::high_resolution_clock::now();
-      std::vector<uint32_t> num_buffers;
 
-      UPDATE_TIMING(t[i * 5 + 0], AllGatherNumBuffers(tables[0], &num_buffers));
+      UPDATE_TIMING(t[i * 5 + 0], AllGatherNumBuffers(tables[0]));
       auto min_max = std::minmax_element(num_buffers.begin(), num_buffers.end());
       min_num_buf = *min_max.first;
       max_num_buf = *min_max.second;
       tot_num_buf = std::accumulate(num_buffers.begin(), num_buffers.end(), uint32_t(0));
 //    print_array("num buf\t", rank, num_buffers);
 
-      Buffer rec_buffer;
       UPDATE_TIMING(t[i * 5 + 1], CreateAllGatherBufferRequests(tables[0],
-                                                        num_buffers,
-                                                        tot_num_buf,
-                                                        min_num_buf,
-                                                        max_num_buf,
-                                                        &rec_buffer));
+                                                                tot_num_buf,
+                                                                min_num_buf,
+                                                                max_num_buf));
 
       UPDATE_TIMING(t[i * 5 + 2], ProgressRequests());
 
       auto end = std::chrono::high_resolution_clock::now();
-      //      PrintOutput(rec_buffer);
+//      PrintOutput();
       t[i * 5 + 3] += std::chrono::duration_cast<std::chrono::duration<double, std::milli>>(end - start).count();
 
       UPDATE_TIMING(t[i * 5 + 4], ucc_barrier(ucc_ctx, ucc_team));
@@ -285,7 +316,6 @@ class AllGatherBenchmark : public Benchmark {
                 << t[i + 0] << "\t" << t[i + 1] << "\t" << t[i + 2] << "\t" << t[i + 3] << "\t" << t[i + 4] << "\t"
                 << i / iter << std::endl;
     }
-
 
     return DestroyUcc();
   }
@@ -307,7 +337,7 @@ class AllGatherBenchmark : public Benchmark {
     }
   }
 
-  void PrintOutput(Buffer &rec_buffer) {
+  void PrintOutput() {
     uint8_t *p = rec_buffer.Data();
     std::cout << rank << " OUT:[";
     for (size_t i = 0; i < rec_buffer.Size(); i += buf_sz) {
@@ -325,8 +355,11 @@ class AllGatherBenchmark : public Benchmark {
 
   // data
   std::vector<Table> tables;
+  std::vector<uint32_t> num_buffers;
+  Buffer rec_buffer;
 
   std::deque<Request> pending_requests{};
+  std::vector<ucc_mem_map_t> mem_regions{};
 };
 
 std::unique_ptr<Benchmark> create_bench(const std::string_view &name, MPI_Comm comm,
