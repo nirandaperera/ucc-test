@@ -309,13 +309,16 @@ class AllGatherBenchmark : public Benchmark {
       UPDATE_TIMING(t[i * 5 + 4], ucc_barrier(ucc_ctx, ucc_team));
     }
 
+    std::this_thread::sleep_for(std::chrono::milliseconds(rank * 50));
+    std::stringstream ss;
     for (size_t i = 0; i < iter * 5; i += 5) {
-      std::cout << std::fixed << std::setprecision(4) << world_size
+      ss << std::fixed << std::setprecision(4) << world_size
                 << " TIMINGS(" << iter << ") " << rank << "\t"
                 << buf_sz << "\t" << tot_num_buf * buf_sz << "\t"
                 << t[i + 0] << "\t" << t[i + 1] << "\t" << t[i + 2] << "\t" << t[i + 3] << "\t" << t[i + 4] << "\t"
                 << i / iter << std::endl;
     }
+    std::cout << ss.rdbuf();
 
     return DestroyUcc();
   }
