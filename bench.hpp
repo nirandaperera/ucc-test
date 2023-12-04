@@ -10,6 +10,7 @@
 #include <thread>
 #include <atomic>
 #include <iomanip>
+#include <ostream>
 #include "data.hpp"
 #include "third-party/CLI11.hpp"
 
@@ -45,29 +46,40 @@ class CtxCreateBenchmark : public Benchmark {
 
   static std::string_view Name() { return "ctx_create"; }
 
-  ucc_status_t Run() override {
-    std::array<double, 5> t{};
+  struct timing {
+    explicit timing(uint32_t iter) : iter(iter) {}
+    uint32_t iter;
+    double init{}, c_create{}, t_create{}, barrier{}, t_destroy{}, c_destroy{};
+    friend std::ostream &operator<<(std::ostream &os, const timing &t) {
+      os << t.init << ","
+         << t.c_create / t.iter << ","
+         << t.t_create / t.iter << ","
+         << t.barrier / t.iter << ","
+         << t.t_destroy / t.iter << ","
+         << t.c_destroy / t.iter;
+      return os;
+    }
+  };
 
+  ucc_status_t Run() override {
+    timing t(iter);
     ucc_lib_h lib;
-    UPDATE_TIMING(t[0], init_ucc(&lib));
+    UPDATE_TIMING(t.init, init_ucc(&lib));
 
     for (int i = 0; i < iter; i++) {
       ucc_context_h ucc_ctx;
-      UPDATE_TIMING(t[1], create_ucc_ctx(lib, rank, world_size, &ucc_ctx));
+      UPDATE_TIMING(t.c_create, create_ucc_ctx(lib, rank, world_size, &ucc_ctx));
 
       ucc_team_h ucc_team;
-      UPDATE_TIMING(t[2], create_ucc_team(ucc_ctx, rank, world_size, &ucc_team));
+      UPDATE_TIMING(t.t_create, create_ucc_team(ucc_ctx, rank, world_size, &ucc_team));
 
-      UPDATE_TIMING(t[3], destroy_ucc_team(ucc_team));
+      UPDATE_TIMING(t.barrier, ucc_barrier(ucc_ctx, ucc_team));
 
-      UPDATE_TIMING(t[4], ucc_context_destroy(ucc_ctx));
+      UPDATE_TIMING(t.t_destroy, destroy_ucc_team(ucc_team));
+
+      UPDATE_TIMING(t.c_destroy, ucc_context_destroy(ucc_ctx));
     }
-    std::cout << "TIMINGS " << rank << ","
-              << t[0] << ","
-              << t[1] / iter << ","
-              << t[2] / iter << ","
-              << t[3] / iter << ","
-              << t[4] / iter << std::endl;
+    std::cout << "TIMINGS " << rank << "," << t << std::endl;
     return UCC_OK;
   }
 };
