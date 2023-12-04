@@ -328,7 +328,7 @@ class AllGatherBenchmark : public Benchmark {
                 << " TIMINGS(" << iter << ") " << rank << "\t"
                 << buf_sz << "\t" << tot_num_buf * buf_sz << "\t"
                 << t[i + 0] << "\t" << t[i + 1] << "\t" << t[i + 2] << "\t" << t[i + 3] << "\t" << t[i + 4] << "\t"
-                << i / iter << std::endl;
+                << i / 5 << std::endl;
     }
     std::cout << ss.rdbuf();
 
