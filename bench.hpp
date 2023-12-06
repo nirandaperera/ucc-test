@@ -68,10 +68,10 @@ class CtxCreateBenchmark : public Benchmark {
 
     for (int i = 0; i < iter; i++) {
       ucc_context_h ucc_ctx;
-      UPDATE_TIMING(t.c_create, create_ucc_ctx(lib, rank, world_size, &ucc_ctx));
+      UPDATE_TIMING(t.c_create, create_ucc_ctx(lib, rank, world_size, MPI_COMM_WORLD, &ucc_ctx));
 
       ucc_team_h ucc_team;
-      UPDATE_TIMING(t.t_create, create_ucc_team(ucc_ctx, rank, world_size, &ucc_team));
+      UPDATE_TIMING(t.t_create, create_ucc_team(ucc_ctx, rank, world_size, MPI_COMM_WORLD, &ucc_team));
 
       UPDATE_TIMING(t.barrier, ucc_barrier(ucc_ctx, ucc_team));
 
@@ -149,7 +149,7 @@ class AllGatherBenchmark : public Benchmark {
     CHECK_UCC_OK(ucc_context_create(lib, &ctx_params, ctx_config, &ucc_ctx))
     ucc_context_config_release(ctx_config);
 
-    return create_ucc_team(ucc_ctx, rank, world_size, &ucc_team);
+    return create_ucc_team(ucc_ctx, rank, world_size, MPI_COMM_WORLD, &ucc_team);
   }
 
   ucc_status_t DestroyUcc() {
@@ -325,10 +325,11 @@ class AllGatherBenchmark : public Benchmark {
     std::stringstream ss;
     for (size_t i = 0; i < iter * 5; i += 5) {
       ss << std::fixed << std::setprecision(4) << world_size
-                << " TIMINGS(" << iter << ") " << rank << "\t"
-                << buf_sz << "\t" << tot_num_buf * buf_sz << "\t"
-                << t[i + 0] << "\t" << t[i + 1] << "\t" << t[i + 2] << "\t" << t[i + 3] << "\t" << t[i + 4] << "\t"
-                << i / 5 << std::endl;
+                                               << " TIMINGS(" << iter << ") " << rank << "\t"
+                                               << buf_sz << "\t" << tot_num_buf * buf_sz << "\t"
+                                               << t[i + 0] << "\t" << t[i + 1] << "\t" << t[i + 2] << "\t" << t[i + 3]
+                                               << "\t" << t[i + 4] << "\t"
+                                               << i / 5 << std::endl;
     }
     std::cout << ss.rdbuf();
 
@@ -377,12 +378,93 @@ class AllGatherBenchmark : public Benchmark {
   std::vector<ucc_mem_map_t> mem_regions{};
 };
 
+class MultiCtxTest : public Benchmark {
+ public:
+  MultiCtxTest(MPI_Comm comm, std::vector<std::string> *bench_args) : Benchmark(comm, bench_args) {
+    CLI::App app;
+    app.add_option("--ctx_sz", ctx_sz)->required();
+    app.parse(*bench_args);
+
+    if (ctx_sz >= world_size) {
+      throw std::runtime_error("ctx_sz should be <World size");
+    }
+
+    // color 0 if rank < ctx_sz else 1
+    if (rank < ctx_sz) {
+      sub_comm_id = 0;
+      sub_comm_rank = rank;
+      sub_comm_world_sz = ctx_sz;
+    } else {
+      sub_comm_id = 1;
+      sub_comm_rank = rank - ctx_sz;
+      sub_comm_world_sz = world_size - ctx_sz;
+    }
+
+    CHECK_MPI(MPI_Comm_split(MPI_COMM_WORLD, sub_comm_id, sub_comm_rank, &sub_comm));
+    if (sub_comm_rank != get_mpi_rank(sub_comm)) {
+      throw std::runtime_error("sub comm rank mismatch");
+    }
+
+    if (sub_comm_world_sz != get_mpi_world_size(sub_comm)) {
+      throw std::runtime_error("sub comm world size mismatch");
+    }
+
+    std::cout << "sub comm rank " << sub_comm_rank << " sz " << sub_comm_world_sz << std::endl;
+  }
+
+  static std::string_view Name() { return "multi_ctx"; }
+
+  ucc_status_t Execute(ucc_context_h *ctx, ucc_team_h *team, size_t r, size_t w_sz, MPI_Comm comm) {
+    std::cout << rank << " #### " << sub_comm_id << " " << sub_comm_rank << " " << sub_comm_world_sz << std::endl;
+
+    CHECK_UCC_OK(create_ucc_ctx(lib, r, w_sz, comm, ctx))
+
+    CHECK_UCC_OK(create_ucc_team(*ctx, r, w_sz, comm, team))
+
+    CHECK_UCC_OK(ucc_barrier(*ctx, *team))
+
+    CHECK_UCC_OK(ucc_team_destroy(*team))
+
+    CHECK_UCC_OK(ucc_context_destroy(*ctx))
+
+    return UCC_OK;
+  }
+
+  ucc_status_t Run() override {
+    CHECK_UCC_OK(init_ucc(&lib))
+
+    std::thread sub_comm_thread([&]() {
+      CHECK_UCC_OK(Execute(&ctxs[1], &teams[1], sub_comm_rank, sub_comm_world_sz, sub_comm))
+      return UCC_OK;
+    });
+
+    CHECK_UCC_OK(Execute(&ctxs[0], &teams[0], rank, world_size, MPI_COMM_WORLD));
+
+    sub_comm_thread.join();
+
+//    sleep(2);
+
+    return UCC_OK;
+  }
+
+ private:
+  int ctx_sz{}, sub_comm_id{}, sub_comm_rank{}, sub_comm_world_sz{};
+  MPI_Comm sub_comm{};
+
+  // ucc
+  ucc_lib_h lib{};
+  std::array<ucc_context_h, 2> ctxs{};
+  std::array<ucc_team_h, 2> teams{};
+};
+
 std::unique_ptr<Benchmark> create_bench(const std::string_view &name, MPI_Comm comm,
                                         std::vector<std::string> *bench_args) {
   if (name == CtxCreateBenchmark::Name()) {
     return std::make_unique<CtxCreateBenchmark>(comm, bench_args);
   } else if (name == AllGatherBenchmark::Name()) {
     return std::make_unique<AllGatherBenchmark>(comm, bench_args);
+  } else if (name == MultiCtxTest::Name()) {
+    return std::make_unique<MultiCtxTest>(comm, bench_args);
   }
 
   return nullptr;
