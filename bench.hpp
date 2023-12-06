@@ -383,6 +383,7 @@ class MultiCtxTest : public Benchmark {
   MultiCtxTest(MPI_Comm comm, std::vector<std::string> *bench_args) : Benchmark(comm, bench_args) {
     CLI::App app;
     app.add_option("--ctx_sz", ctx_sz)->required();
+    app.add_option("--buf_sz", buf_sz)->default_val(/*1MB*/1 << 20)->transform(CLI::AsSizeValue(/*kb_is_1000=*/false));
     app.parse(*bench_args);
 
     if (ctx_sz >= world_size) {
@@ -414,18 +415,50 @@ class MultiCtxTest : public Benchmark {
 
   static std::string_view Name() { return "multi_ctx"; }
 
-  ucc_status_t Execute(ucc_context_h *ctx, ucc_team_h *team, size_t r, size_t w_sz, MPI_Comm comm) {
-    std::cout << rank << " #### " << sub_comm_id << " " << sub_comm_rank << " " << sub_comm_world_sz << std::endl;
+  [[nodiscard]] ucc_status_t AllGatherBuffer(const ucc_context_h &ctx, const ucc_team_h &team, size_t w_sz) const {
+    size_t num_elems = (buf_sz + sizeof(int64_t) - 1) / sizeof(int64_t);
+    std::vector<int64_t> src(num_elems);
+    std::iota(src.begin(), src.end(), 0);
 
-    CHECK_UCC_OK(create_ucc_ctx(lib, r, w_sz, comm, ctx))
+    std::vector<int64_t> dest(num_elems * w_sz);
 
-    CHECK_UCC_OK(create_ucc_team(*ctx, r, w_sz, comm, team))
+    ucc_coll_args_t args;
+    args.mask = 0;
+    args.coll_type = UCC_COLL_TYPE_ALLGATHER;
 
-    CHECK_UCC_OK(ucc_barrier(*ctx, *team))
+    args.src.info =
+        {.buffer = src.data(), .count = num_elems, .datatype = UCC_DT_INT64, .mem_type = UCC_MEMORY_TYPE_HOST};
+    args.dst.info =
+        {.buffer = dest.data(), .count = num_elems * w_sz, .datatype = UCC_DT_INT64, .mem_type = UCC_MEMORY_TYPE_HOST};
 
-    CHECK_UCC_OK(ucc_team_destroy(*team))
+    ucc_coll_req_h req;
+    CHECK_UCC_OK(ucc_collective_init(&args, &req, team))
 
-    CHECK_UCC_OK(ucc_context_destroy(*ctx))
+    CHECK_UCC_OK(ucc_collective_post(req));
+
+    ucc_status_t status;
+    while ((status = ucc_collective_test(req)) == UCC_INPROGRESS) {
+      ucc_context_progress(ctx);
+    }
+    CHECK_UCC_OK(status)
+
+    CHECK_UCC_OK(ucc_collective_finalize(req))
+
+    return check_all_gather_buffer(src, dest, w_sz);
+  }
+
+  ucc_status_t Execute(ucc_context_h &ctx, ucc_team_h &team, size_t r, size_t w_sz, MPI_Comm comm) {
+    CHECK_UCC_OK(create_ucc_ctx(lib, r, w_sz, comm, &ctx))
+
+    CHECK_UCC_OK(create_ucc_team(ctx, r, w_sz, comm, &team))
+
+    CHECK_UCC_OK(ucc_barrier(ctx, team))
+
+    CHECK_UCC_OK(AllGatherBuffer(ctx, team, w_sz))
+
+    CHECK_UCC_OK(ucc_team_destroy(team))
+
+    CHECK_UCC_OK(ucc_context_destroy(ctx))
 
     return UCC_OK;
   }
@@ -434,21 +467,18 @@ class MultiCtxTest : public Benchmark {
     CHECK_UCC_OK(init_ucc(&lib))
 
     std::thread sub_comm_thread([&]() {
-      CHECK_UCC_OK(Execute(&ctxs[1], &teams[1], sub_comm_rank, sub_comm_world_sz, sub_comm))
+      CHECK_UCC_OK(Execute(ctxs[1], teams[1], sub_comm_rank, sub_comm_world_sz, sub_comm))
       return UCC_OK;
     });
 
-    CHECK_UCC_OK(Execute(&ctxs[0], &teams[0], rank, world_size, MPI_COMM_WORLD));
+    CHECK_UCC_OK(Execute(ctxs[0], teams[0], rank, world_size, MPI_COMM_WORLD));
 
     sub_comm_thread.join();
-
-//    sleep(2);
-
     return UCC_OK;
   }
 
  private:
-  int ctx_sz{}, sub_comm_id{}, sub_comm_rank{}, sub_comm_world_sz{};
+  int ctx_sz{}, buf_sz{}, sub_comm_id{}, sub_comm_rank{}, sub_comm_world_sz{};
   MPI_Comm sub_comm{};
 
   // ucc

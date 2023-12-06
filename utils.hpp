@@ -24,9 +24,9 @@ static std::unordered_map<void *,
 }
 
 #define CHECK_MPI(expr)                                                 \
-    if (auto r_ = (expr); r_ != MPI_SUCCESS) {                     \
+    if (auto r_ = (expr); r_ != MPI_SUCCESS) {                          \
     std::stringstream ss;                                               \
-    ss << "MPI error: " << r_ << " in " << __FILE__ << ":" << __LINE__;  \
+    ss << "MPI error: " << r_ << " in " << __FILE__ << ":" << __LINE__; \
     std::cerr << ss.str() << std::endl;                                 \
     throw std::runtime_error(ss.str());                                 \
 }
@@ -211,4 +211,19 @@ ucc_status_t ucc_barrier(ucc_context_h ctx, ucc_team_h team) {
   return ucc_collective_finalize(req);
 }
 
+template<typename T>
+ucc_status_t check_all_gather_buffer(const std::vector<T> &src, const std::vector<T> &dest, size_t world_sz) {
+  if (src.size() * world_sz != dest.size()) {
+    return UCC_ERR_NO_MESSAGE;
+  }
+
+  for (size_t i = 0; i < world_sz; i++) {
+    if (!std::equal(src.begin(), src.end(), dest.begin() + i * src.size())) {
+      return UCC_ERR_NO_MESSAGE;
+    }
+  }
+
+  return UCC_OK;
 }
+
+} // namespace ucc_test
