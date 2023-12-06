@@ -16,6 +16,9 @@
 
 namespace ucc_test {
 
+/**
+ * Base benchmark class
+ */
 class Benchmark {
  public:
   Benchmark(MPI_Comm comm, std::vector<std::string> *bench_args) : rank(get_mpi_rank(comm)),
@@ -37,6 +40,15 @@ class Benchmark {
   uint32_t rank, world_size, iter;
 };
 
+/**
+ * Benchmarks the following steps
+ *  - Init ucc_lib
+ *  - Create ucc ctx
+ *  - Create a ucc team
+ *  - Barrier
+ *  - Destroy team
+ *  - Destroy ctx
+ */
 class CtxCreateBenchmark : public Benchmark {
  public:
   CtxCreateBenchmark(MPI_Comm comm, std::vector<std::string> *bench_args) : Benchmark(comm, bench_args) {
@@ -84,6 +96,16 @@ class CtxCreateBenchmark : public Benchmark {
   }
 };
 
+/**
+ * Benchmarks an AllGather operation on the Table. Each worker would produce a Table with a random size between
+ * [min_table_sz, max_table_sz]. This translates to ceil(table_sz/ buf_sz) number of buffers.
+ * At the end of the operation, every worker would receive all tables (with the rank order).
+ * Following steps are timings
+ *  - Initial allgather for number of buffers every worker
+ *  - Post allgather request on table buffers
+ *  - Progress allgather requests
+ *  - Total time
+ */
 class AllGatherBenchmark : public Benchmark {
  public:
   AllGatherBenchmark(MPI_Comm comm, std::vector<std::string> *bench_args) : Benchmark(comm, bench_args) {
@@ -378,6 +400,12 @@ class AllGatherBenchmark : public Benchmark {
   std::vector<ucc_mem_map_t> mem_regions{};
 };
 
+/**
+ * This tests if UCC can use 2 parallel contexts. This partitions the MPI world into 2 partitions with the ranks
+ * [0, ctx_sz) and [ctx_sz, world_sz). Each worker would initialize 2 UCC contexts, 1. for the global communicator, and
+ * 2. for the sub-communicator. Then run a barrier and a allgather buffer. Global communicator uses the main thread,
+ * while the sub-communicator uses a separate thread.
+ */
 class MultiCtxTest : public Benchmark {
  public:
   MultiCtxTest(MPI_Comm comm, std::vector<std::string> *bench_args) : Benchmark(comm, bench_args) {
@@ -487,6 +515,13 @@ class MultiCtxTest : public Benchmark {
   std::array<ucc_team_h, 2> teams{};
 };
 
+/**
+ * Create benchmark class based on the args. New benchmarks should be added to the if-else latch here.
+ * @param name
+ * @param comm
+ * @param bench_args
+ * @return
+ */
 std::unique_ptr<Benchmark> create_bench(const std::string_view &name, MPI_Comm comm,
                                         std::vector<std::string> *bench_args) {
   if (name == CtxCreateBenchmark::Name()) {
