@@ -18,9 +18,17 @@ static std::unordered_map<void *,
                                      int>> kTimeMap;
 
 #define CHECK_UCC_OK(expr) \
-    if (const auto& r = (expr); r != UCC_OK) {                                              \
-    std::cerr << "UCC error: " << r << " in " << __FILE__ << ":" << __LINE__ << std::endl;  \
-    return r;                                                                               \
+    if (auto r_ = (expr); r_ != UCC_OK) {                                              \
+    std::cerr << "UCC error: " << r_ << " in " << __FILE__ << ":" << __LINE__ << std::endl;  \
+    return r_;                                                                               \
+}
+
+#define CHECK_MPI(expr)                                                 \
+    if (auto r_ = (expr); r_ != MPI_SUCCESS) {                          \
+    std::stringstream ss;                                               \
+    ss << "MPI error: " << r_ << " in " << __FILE__ << ":" << __LINE__; \
+    std::cerr << ss.str() << std::endl;                                 \
+    throw std::runtime_error(ss.str());                                 \
 }
 
 #define UPDATE_TIMING(t, expr) \
@@ -31,15 +39,15 @@ static std::unordered_map<void *,
     t += std::chrono::duration_cast<std::chrono::duration<double, std::milli>>(end_ - start_).count(); \
     } while(0)
 
-int get_mpi_rank(MPI_Comm comm) {
+int get_mpi_rank(MPI_Comm comm = MPI_COMM_WORLD) {
   int x;
-  MPI_Comm_rank(comm, &x);
+  CHECK_MPI(MPI_Comm_rank(comm, &x));
   return x;
 }
 
-int get_mpi_world_size(MPI_Comm comm) {
+int get_mpi_world_size(MPI_Comm comm = MPI_COMM_WORLD) {
   int x;
-  MPI_Comm_size(comm, &x);
+  CHECK_MPI(MPI_Comm_size(comm, &x));
   return x;
 }
 
@@ -123,7 +131,7 @@ ucc_status_t init_ucc(ucc_lib_h *lib) {
   return UCC_OK;
 }
 
-ucc_status_t create_ucc_ctx(ucc_lib_h lib, int rank, int world_size, ucc_context_h *ucc_ctx) {
+ucc_status_t create_ucc_ctx(ucc_lib_h lib, int rank, int world_size, MPI_Comm comm, ucc_context_h *ucc_ctx) {
   // init ucc context
   ucc_context_params_t ctx_params;
   ctx_params.mask = UCC_CONTEXT_PARAM_FIELD_OOB | UCC_CONTEXT_PARAM_FIELD_TYPE | UCC_CONTEXT_PARAM_FIELD_SYNC_TYPE;
@@ -134,7 +142,7 @@ ucc_status_t create_ucc_ctx(ucc_lib_h lib, int rank, int world_size, ucc_context
   ctx_params.oob.allgather = oob_allgather<ctx_type>;
   ctx_params.oob.req_test = oob_allgather_test;
   ctx_params.oob.req_free = oob_allgather_free;
-  ctx_params.oob.coll_info = MPI_COMM_WORLD;
+  ctx_params.oob.coll_info = comm;
   ctx_params.oob.n_oob_eps = world_size;
   ctx_params.oob.oob_ep = rank;
 
@@ -147,7 +155,11 @@ ucc_status_t create_ucc_ctx(ucc_lib_h lib, int rank, int world_size, ucc_context
   return UCC_OK;
 }
 
-ucc_status_t create_ucc_team(ucc_context_h ucc_ctx, size_t rank, size_t world_size, ucc_team_h *ucc_team) {
+ucc_status_t create_ucc_team(ucc_context_h ucc_ctx,
+                             size_t rank,
+                             size_t world_size,
+                             MPI_Comm comm,
+                             ucc_team_h *ucc_team) {
   ucc_team_params_t team_params;
 
   team_params.mask = UCC_TEAM_PARAM_FIELD_OOB | UCC_TEAM_PARAM_FIELD_ORDERING | UCC_TEAM_PARAM_FIELD_TEAM_SIZE |
@@ -156,7 +168,7 @@ ucc_status_t create_ucc_team(ucc_context_h ucc_ctx, size_t rank, size_t world_si
   team_params.oob.allgather = oob_allgather<team_type>;
   team_params.oob.req_test = oob_allgather_test;
   team_params.oob.req_free = oob_allgather_free;
-  team_params.oob.coll_info = MPI_COMM_WORLD;
+  team_params.oob.coll_info = comm;
   team_params.oob.n_oob_eps = world_size;
   team_params.oob.oob_ep = rank;
 
@@ -199,4 +211,19 @@ ucc_status_t ucc_barrier(ucc_context_h ctx, ucc_team_h team) {
   return ucc_collective_finalize(req);
 }
 
+template<typename T>
+ucc_status_t check_all_gather_buffer(const std::vector<T> &src, const std::vector<T> &dest, size_t world_sz) {
+  if (src.size() * world_sz != dest.size()) {
+    return UCC_ERR_NO_MESSAGE;
+  }
+
+  for (size_t i = 0; i < world_sz; i++) {
+    if (!std::equal(src.begin(), src.end(), dest.begin() + i * src.size())) {
+      return UCC_ERR_NO_MESSAGE;
+    }
+  }
+
+  return UCC_OK;
 }
+
+} // namespace ucc_test
