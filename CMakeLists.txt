@@ -3,6 +3,8 @@ project(ucc_test)
 
 set(CMAKE_CXX_STANDARD 17)
 
+find_package (Threads REQUIRED)
+
 # mpi
 find_package(MPI REQUIRED COMPONENTS CXX)
 message(STATUS "MPI include dir: ${MPI_CXX_INCLUDE_PATH}")
@@ -28,12 +30,6 @@ message(STATUS "UCC libs: ${UCC_LIBRARIES}")
 include_directories(${MPI_CXX_INCLUDE_PATH} ${UCX_INCLUDE_DIRS} ${UCC_INCLUDE_DIRS})
 link_directories("${UCX_LIBRARIES}/ucx" ${UCC_LIBRARIES} ${UCC_LIBRARIES}/ucc)
 
-add_executable(ucc_test main.cpp
-        utils.hpp
-        bench.hpp
-        data.hpp
-        third-party/CLI11.hpp
-        third-party/ctpl_stl.h
-        ucc_exec.hpp
-)
-target_link_libraries(ucc_test ${MPI_CXX_LIBRARIES} ucx::ucp ucc)
+add_executable(ucc_test main.cpp)
+
+target_link_libraries(ucc_test ${MPI_CXX_LIBRARIES} ucx::ucp ucc ${CMAKE_THREAD_LIBS_INIT})
